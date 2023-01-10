@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="jest tests" tests="1" failures="0" errors="0" time="3.749">
+  <testsuite name="matchPath" errors="0" failures="0" skipped="0" timestamp="2022-11-20T22:49:42" time="3.48" tests="1">
+    <testcase classname="matchPath should return true if the test path matches the template path" name="matchPath should return true if the test path matches the template path" time="0.003">
+    </testcase>
+  </testsuite>
+</testsuites>
