@@ -1,1 +1,1 @@
-export * from './Adapter';
+export * from './Adapter/Adapter';

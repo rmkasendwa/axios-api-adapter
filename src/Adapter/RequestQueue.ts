@@ -1,5 +1,5 @@
 import { AxiosRequestConfig, AxiosResponse } from 'axios';
-import hash from 'object-hash';
+import hash from 'hash-it';
 
 export interface RequestController {
   cancelRequest: () => void;
@@ -35,7 +35,7 @@ export const queueRequest = (
   if (hashableRequestOptions.data instanceof FormData) {
     hashableRequestOptions.data = Date.now();
   }
-  const requestKey = hash(JSON.stringify(hashableRequestOptions));
+  const requestKey = String(hash(hashableRequestOptions));
   if (requestQueue[requestKey]) {
     requestQueue[requestKey].push(requestOptions);
   } else {
