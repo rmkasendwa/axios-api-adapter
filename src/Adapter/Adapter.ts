@@ -32,8 +32,36 @@ export interface RequestController {
   processResponseError?: (err: AxiosError<any>) => any;
 }
 
-export const getAPIAdapter = () => {
-  const HOST_URL = typeof window !== 'undefined' ? window.location.origin : '';
+export interface GetAPIAdapterOptions {
+  id?: string;
+  hostUrl?: string;
+}
+
+export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
+  const HOST_URL = (() => {
+    if (hostUrl) {
+      return hostUrl;
+    }
+    if (typeof window !== 'undefined') {
+      return window.location.origin;
+    }
+    return '';
+  })();
+
+  const { defaultRequestHeadersStorageKey, tokenStorageKey } = (() => {
+    let defaultRequestHeadersStorageKey = 'defaultRequestHeaders';
+    let tokenStorageKey = 'token';
+
+    if (id) {
+      defaultRequestHeadersStorageKey += id;
+      tokenStorageKey += id;
+    }
+
+    return {
+      defaultRequestHeadersStorageKey,
+      tokenStorageKey,
+    };
+  })();
 
   const FAILED_REQUEST_RETRY_STATUS_BLACKLIST: number[] = [400, 401, 500];
   const MAX_REQUEST_RETRY_COUNT = 2;
@@ -50,7 +78,7 @@ export const getAPIAdapter = () => {
 
   const setDefaultRequestHeaders = () => {
     const cachedDefaultRequestHeaders: Record<string, string> | null =
-      StorageManager.get('defaultRequestHeaders');
+      StorageManager.get(defaultRequestHeadersStorageKey);
     cachedDefaultRequestHeaders &&
       Object.assign(defaultRequestHeaders, cachedDefaultRequestHeaders);
   };
@@ -62,7 +90,7 @@ export const getAPIAdapter = () => {
 
   const patchDefaultRequestHeaders = (headers: Record<string, string>) => {
     Object.assign(defaultRequestHeaders, headers);
-    StorageManager.add('defaultRequestHeaders', defaultRequestHeaders);
+    StorageManager.add(defaultRequestHeadersStorageKey, defaultRequestHeaders);
   };
 
   const RequestController: RequestController = {};
@@ -251,7 +279,7 @@ export const getAPIAdapter = () => {
   };
 
   const logout = async () => {
-    StorageManager.remove('token');
+    StorageManager.remove(tokenStorageKey);
   };
 
   return {
