@@ -21,6 +21,7 @@ export const REDIRECTION_ERROR_MESSAGES = [
 export interface IAPIAdapterConfiguration {
   HOST_URL: string;
   getFullResourceURL: (path: string) => string;
+  preProcessResponseErrorMessages: boolean;
 }
 
 export interface RequestController {
@@ -72,6 +73,7 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
       if (path.match(/^https?:/)) return path;
       return APIAdapterConfiguration.HOST_URL + path;
     },
+    preProcessResponseErrorMessages: true,
   };
 
   const defaultRequestHeaders: Record<string, string> = {};
@@ -149,64 +151,72 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
                 return response;
               })
               .catch(async (err: AxiosError) => {
-                pendingRequestCancelTokenSources.splice(
-                  pendingRequestCancelTokenSources.indexOf(cancelTokenSource),
-                  1
-                );
-                const cancelPendingRequests = () => {
-                  [...pendingRequestCancelTokenSources].forEach(
-                    (cancelTokenSource) => cancelTokenSource.cancel()
+                if (APIAdapterConfiguration.preProcessResponseErrorMessages) {
+                  pendingRequestCancelTokenSources.splice(
+                    pendingRequestCancelTokenSources.indexOf(cancelTokenSource),
+                    1
                   );
-                };
-                if (RequestController.processResponseError) {
-                  err = await RequestController.processResponseError(err);
-                }
-                const { response, message } = err as any;
-                const errorMessage = (() => {
-                  if (response?.data) {
-                    // Extracting server side error message
-                    const message = (() => {
-                      if (typeof response.data.message === 'string') {
-                        return response.data.message;
+                  const cancelPendingRequests = () => {
+                    [...pendingRequestCancelTokenSources].forEach(
+                      (cancelTokenSource) => cancelTokenSource.cancel()
+                    );
+                  };
+                  if (RequestController.processResponseError) {
+                    err = await RequestController.processResponseError(err);
+                  }
+                  const { response, message } = err as any;
+                  const errorMessage = (() => {
+                    if (response?.data) {
+                      // Extracting server side error message
+                      const message = (() => {
+                        if (typeof response.data.message === 'string') {
+                          return response.data.message;
+                        }
+                        if (Array.isArray(response.data.message)) {
+                          return response.data.message
+                            .filter(
+                              (message: any) => typeof message === 'string'
+                            )
+                            .join('\n');
+                        }
+                        if (
+                          Array.isArray(response.data.errors) &&
+                          response.data.errors.length > 0
+                        ) {
+                          return response.data.errors
+                            .map((err: any) => {
+                              return err.message;
+                            })
+                            .join('\n');
+                        }
+                        return 'Something went wrong';
+                      })();
+                      if (REDIRECTION_ERROR_MESSAGES.includes(message)) {
+                        cancelPendingRequests();
+                        return message;
                       }
-                      if (Array.isArray(response.data.message)) {
-                        return response.data.message
-                          .filter((message: any) => typeof message === 'string')
-                          .join('\n');
-                      }
-                      if (
-                        Array.isArray(response.data.errors) &&
-                        response.data.errors.length > 0
-                      ) {
-                        return response.data.errors
-                          .map((err: any) => {
-                            return err.message;
-                          })
-                          .join('\n');
-                      }
-                      return 'Something went wrong';
-                    })();
-                    if (REDIRECTION_ERROR_MESSAGES.includes(message)) {
-                      cancelPendingRequests();
-                      return message;
+                      return `Error: '${label}' failed with message "${message}"`;
                     }
-                    return `Error: '${label}' failed with message "${message}"`;
+                    if (
+                      message &&
+                      !String(message).match(/request\sfailed/gi)
+                    ) {
+                      return `Error: '${label}' failed with message "${message}"`;
+                    }
+                    return `Error: '${label}' failed. Something went wrong`;
+                  })();
+                  if (
+                    response &&
+                    !FAILED_REQUEST_RETRY_STATUS_BLACKLIST.includes(
+                      response.status
+                    ) &&
+                    retryCount < MAX_REQUEST_RETRY_COUNT
+                  ) {
+                    return fetchData(retryCount + 1);
                   }
-                  if (message && !String(message).match(/request\sfailed/gi)) {
-                    return `Error: '${label}' failed with message "${message}"`;
-                  }
-                  return `Error: '${label}' failed. Something went wrong`;
-                })();
-                if (
-                  response &&
-                  !FAILED_REQUEST_RETRY_STATUS_BLACKLIST.includes(
-                    response.status
-                  ) &&
-                  retryCount < MAX_REQUEST_RETRY_COUNT
-                ) {
-                  return fetchData(retryCount + 1);
+                  return reject(Error(errorMessage));
                 }
-                return reject(Error(errorMessage));
+                return reject(err);
               });
             if (response) {
               pendingRequestCancelTokenSources.splice(
