@@ -32,7 +32,10 @@ export const queueRequest = (
   callback: (resolve: Resolve, reject: Reject) => void
 ) => {
   const hashableRequestOptions = { ...requestOptions };
-  if (hashableRequestOptions.data instanceof FormData) {
+  if (
+    typeof FormData !== 'undefined' &&
+    hashableRequestOptions.data instanceof FormData
+  ) {
     hashableRequestOptions.data = Date.now();
   }
   const requestKey = String(hash(hashableRequestOptions));

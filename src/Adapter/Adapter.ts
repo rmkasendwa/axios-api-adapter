@@ -234,7 +234,7 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
     options.headers || (options.headers = {});
 
     if (options.data && !(options.headers as any)['Content-Type']) {
-      if (options.data instanceof FormData) {
+      if (typeof FormData !== 'undefined' && options.data instanceof FormData) {
         (options.headers as any)['Content-Type'] = 'multipart/form-data';
       } else if (typeof options.data === 'object') {
         options.data = JSON.stringify(options.data);
