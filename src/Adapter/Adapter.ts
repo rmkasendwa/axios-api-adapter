@@ -31,6 +31,10 @@ export interface RequestController {
   ) => Record<string, string>;
   processResponse?: ResponseProcessor;
   processResponseError?: (err: AxiosError<any>) => any;
+  shouldRetryRequest?: (
+    err: AxiosError<any>,
+    numberOfTrials: number
+  ) => Promise<boolean>;
 }
 
 export interface GetAPIAdapterOptions {
@@ -108,7 +112,6 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
       ...options
     }: RequestOptions
   ): Promise<AxiosResponse<T>> => {
-    const defaultHeaders = { ...defaultRequestHeaders };
     const url = APIAdapterConfiguration.getFullResourceURL(path);
 
     return new Promise((resolve, reject) => {
@@ -132,7 +135,7 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
             const response = await axios(url, {
               ...options,
               headers: {
-                ...defaultHeaders,
+                ...defaultRequestHeaders,
                 ...headers,
               } as any,
               cancelToken: cancelTokenSource.token,
@@ -205,12 +208,24 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
                     }
                     return `Error: '${label}' failed. Something went wrong`;
                   })();
+
+                  const shouldRetryRequest = await (async () => {
+                    if (RequestController.shouldRetryRequest) {
+                      return RequestController.shouldRetryRequest(
+                        err,
+                        retryCount
+                      );
+                    }
+                    return false;
+                  })();
+
                   if (
-                    response &&
-                    !FAILED_REQUEST_RETRY_STATUS_BLACKLIST.includes(
-                      response.status
-                    ) &&
-                    retryCount < MAX_REQUEST_RETRY_COUNT
+                    shouldRetryRequest ||
+                    (response &&
+                      !FAILED_REQUEST_RETRY_STATUS_BLACKLIST.includes(
+                        response.status
+                      ) &&
+                      retryCount < MAX_REQUEST_RETRY_COUNT)
                   ) {
                     return fetchData(retryCount + 1);
                   }
@@ -227,7 +242,7 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
                 patchDefaultRequestHeaders(
                   RequestController.rotateHeaders(
                     response.headers as any,
-                    defaultHeaders
+                    defaultRequestHeaders
                   )
                 );
               }
