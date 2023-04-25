@@ -27,7 +27,10 @@ export interface APIRequestCache {
    * @param requestId The id of the request. This is used to identify the request to look for in the selected data cache.
    * @returns The cached data or null if not found
    */
-  getCachedData: <T = any>(cacheId: string, requestId: string) => T | null;
+  getCachedData: <T = any>(
+    cacheId: string,
+    requestId: string
+  ) => Promise<T | null>;
 
   /**
    * Caches the response data in the selected data cache.
@@ -37,7 +40,11 @@ export interface APIRequestCache {
    * @param data The data to cache
    * @returns True if the data was cached successfully and false otherwise.
    */
-  cacheData: <T = any>(cacheId: string, requestId: string, data: T) => boolean;
+  cacheData: <T = any>(
+    cacheId: string,
+    requestId: string,
+    data: T
+  ) => Promise<boolean>;
 }
 
 export interface IAPIAdapterConfiguration {
@@ -177,12 +184,15 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
           if (
             cacheId &&
             APIAdapterConfiguration.cache &&
-            (options.method === 'get' || options.method === 'GET')
+            (!options.method ||
+              options.method === 'get' ||
+              options.method === 'GET')
           ) {
-            const cachedData = APIAdapterConfiguration.cache.getCachedData(
-              requestId,
-              url
-            );
+            const cachedData =
+              await APIAdapterConfiguration.cache.getCachedData(
+                cacheId,
+                requestId
+              );
             if (cachedData) {
               resolve({
                 data: cachedData,
@@ -315,11 +325,11 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
                 );
               }
               if (cacheId && APIAdapterConfiguration.cache) {
-                APIAdapterConfiguration.cache.cacheData(
-                  cacheId,
-                  requestId,
-                  response.data
-                );
+                await APIAdapterConfiguration.cache
+                  .cacheData(cacheId, requestId, response.data)
+                  .catch((err) => {
+                    err; // Caching failed
+                  });
               }
               return resolve(response);
             }
