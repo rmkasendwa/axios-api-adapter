@@ -1,5 +1,6 @@
 import StorageManager from '@infinite-debugger/rmk-utils/StorageManager';
 import axios, { AxiosError, AxiosResponse, CancelTokenSource } from 'axios';
+import hashIt from 'hash-it';
 
 import { CANCELLED_API_REQUEST_MESSAGE } from '../constants';
 import {
@@ -18,10 +19,51 @@ export const REDIRECTION_ERROR_MESSAGES = [
   'User session expired',
 ];
 
+export interface APIRequestCache {
+  /**
+   * Finds the cached data. If not found, it will fetch the data from the API and cache it.
+   *
+   * @param cacheId The id of the data cache. This is used to identify the cache to look for.
+   * @param requestId The id of the request. This is used to identify the request to look for in the selected data cache.
+   * @returns The cached data or null if not found
+   */
+  getCachedData: <T = any>(cacheId: string, requestId: string) => T | null;
+
+  /**
+   * Caches the response data in the selected data cache.
+   *
+   * @param cacheId The id of the data cache. This is used to identify the cache to look for.
+   * @param requestId The id of the request. This is used to identify the request to look for in the selected data cache.
+   * @param data The data to cache
+   * @returns True if the data was cached successfully and false otherwise.
+   */
+  cacheData: <T = any>(cacheId: string, requestId: string, data: T) => boolean;
+}
+
 export interface IAPIAdapterConfiguration {
+  /**
+   * Host URL for the API
+   */
   HOST_URL: string;
+
+  /**
+   * Returns the full URL to the resource
+   *
+   * @param path The path to the resource
+   * @returns The full URL to the resource
+   * @example getFullResourceURL('/users') // https://example.com/users
+   */
   getFullResourceURL: (path: string) => string;
+
+  /**
+   * Whether to pre-process the error messages in the response
+   */
   preProcessResponseErrorMessages: boolean;
+
+  /**
+   * The cache to use for caching the API responses
+   */
+  cache?: APIRequestCache;
 }
 
 export interface RequestController {
@@ -109,12 +151,20 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
       headers = {},
       label = 'operation',
       processResponse,
+      cacheId,
       ...options
     }: RequestOptions
   ): Promise<AxiosResponse<T>> => {
     const url = APIAdapterConfiguration.getFullResourceURL(path);
 
     return new Promise((resolve, reject) => {
+      const requestId = String(
+        hashIt({
+          ...options,
+          url,
+        })
+      );
+
       queueRequest(
         {
           ...options,
@@ -123,6 +173,24 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
           reject,
         },
         async (resolve, reject) => {
+          // Check if the request is already cached
+          if (
+            cacheId &&
+            APIAdapterConfiguration.cache &&
+            (options.method === 'get' || options.method === 'GET')
+          ) {
+            const cachedData = APIAdapterConfiguration.cache.getCachedData(
+              requestId,
+              url
+            );
+            if (cachedData) {
+              resolve({
+                data: cachedData,
+              });
+              return;
+            }
+          }
+
           const fetchData = async (retryCount = 0): Promise<any> => {
             const cancelTokenSource = axios.CancelToken.source();
             options.getRequestController &&
@@ -244,6 +312,13 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
                     response.headers as any,
                     defaultRequestHeaders
                   )
+                );
+              }
+              if (cacheId && APIAdapterConfiguration.cache) {
+                APIAdapterConfiguration.cache.cacheData(
+                  cacheId,
+                  requestId,
+                  response.data
                 );
               }
               return resolve(response);

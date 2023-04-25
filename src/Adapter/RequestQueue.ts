@@ -1,5 +1,5 @@
 import { AxiosRequestConfig, AxiosResponse } from 'axios';
-import hash from 'hash-it';
+import hashIt from 'hash-it';
 
 export interface RequestController {
   cancelRequest: () => void;
@@ -10,8 +10,25 @@ export type ResponseProcessor = <T = any>(
 ) => AxiosResponse<any>;
 
 export interface RequestOptions extends AxiosRequestConfig {
+  /**
+   * A function that will be called with the request controller
+   */
   getRequestController?: (controller: RequestController) => void;
+
+  /**
+   * The label of the request.
+   * @example 'Loading users'
+   */
   label?: string;
+
+  /**
+   * The id of the cache to use when caching the response data or looking for cached data.
+   */
+  cacheId?: string;
+
+  /**
+   * The function that will be called to process the response before it is returned to the caller.
+   */
   processResponse?: ResponseProcessor;
 }
 
@@ -38,17 +55,17 @@ export const queueRequest = (
   ) {
     hashableRequestOptions.data = Date.now();
   }
-  const requestKey = String(hash(hashableRequestOptions));
-  if (requestQueue[requestKey]) {
-    requestQueue[requestKey].push(requestOptions);
+  const requestId = String(hashIt(hashableRequestOptions));
+  if (requestQueue[requestId]) {
+    requestQueue[requestId].push(requestOptions);
   } else {
-    requestQueue[requestKey] = [requestOptions];
+    requestQueue[requestId] = [requestOptions];
     callback(
       (payload) => {
-        resolveRequest(requestKey, payload);
+        resolveRequest(requestId, payload);
       },
       (err) => {
-        rejectRequest(requestKey, err);
+        rejectRequest(requestId, err);
       }
     );
   }
