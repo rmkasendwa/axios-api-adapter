@@ -9,7 +9,7 @@ export type ResponseProcessor = <T = any>(
   response: AxiosResponse<T>
 ) => AxiosResponse<any>;
 
-export interface RequestOptions extends AxiosRequestConfig {
+export interface RequestOptions<T = any> extends AxiosRequestConfig<T> {
   /**
    * A function that will be called with the request controller
    */
@@ -30,6 +30,12 @@ export interface RequestOptions extends AxiosRequestConfig {
    * The function that will be called to process the response before it is returned to the caller.
    */
   processResponse?: ResponseProcessor;
+  /**
+   * The function that will be called when the request is successful.
+   * This is called before the request is resolved. This will not be called if the request data is cached.
+   * @param response The response from the server after the request has been made.
+   */
+  onServerSuccess?: (response: AxiosResponse<T>) => void;
 }
 
 type Resolve = (payload?: any) => void;
