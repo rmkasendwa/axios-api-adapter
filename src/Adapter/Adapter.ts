@@ -242,6 +242,26 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
                 return response;
               })
               .catch(async (err: AxiosError) => {
+                const requestWillRetry = await (async () => {
+                  const shouldRetryRequest = await (async () => {
+                    if (RequestController.shouldRetryRequest) {
+                      return RequestController.shouldRetryRequest(
+                        err,
+                        retryCount
+                      );
+                    }
+                    return false;
+                  })();
+
+                  return (
+                    shouldRetryRequest ||
+                    (response &&
+                      !FAILED_REQUEST_RETRY_STATUS_BLACKLIST.includes(
+                        response.status
+                      ) &&
+                      retryCount < MAX_REQUEST_RETRY_COUNT)
+                  );
+                })();
                 if (APIAdapterConfiguration.preProcessResponseErrorMessages) {
                   pendingRequestCancelTokenSources.splice(
                     pendingRequestCancelTokenSources.indexOf(cancelTokenSource),
@@ -297,28 +317,15 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
                     return `Error: '${label}' failed. Something went wrong`;
                   })();
 
-                  const shouldRetryRequest = await (async () => {
-                    if (RequestController.shouldRetryRequest) {
-                      return RequestController.shouldRetryRequest(
-                        err,
-                        retryCount
-                      );
-                    }
-                    return false;
-                  })();
-
-                  if (
-                    shouldRetryRequest ||
-                    (response &&
-                      !FAILED_REQUEST_RETRY_STATUS_BLACKLIST.includes(
-                        response.status
-                      ) &&
-                      retryCount < MAX_REQUEST_RETRY_COUNT)
-                  ) {
-                    return fetchData(retryCount + 1);
+                  if (!requestWillRetry) {
+                    return reject(Error(errorMessage));
                   }
-                  return reject(Error(errorMessage));
                 }
+
+                if (requestWillRetry) {
+                  return fetchData(retryCount + 1);
+                }
+
                 return reject(err);
               });
             if (response) {
