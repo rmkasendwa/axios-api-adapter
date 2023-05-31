@@ -32,7 +32,10 @@ export interface APIRequestCache {
     cacheId: string,
     requestId: string,
     requestOptions: RequestOptions
-  ) => Promise<T | null>;
+  ) => Promise<{
+    isStale?: boolean;
+    data: T;
+  } | null>;
 
   /**
    * Caches the response data in the selected data cache.
@@ -46,7 +49,10 @@ export interface APIRequestCache {
   cacheData: <T = any>(
     cacheId: string,
     requestId: string,
-    data: T,
+    data: {
+      isStale?: boolean;
+      data: T;
+    },
     requestOptions: RequestOptions
   ) => Promise<boolean>;
 }
@@ -164,6 +170,7 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
       processResponse,
       cacheId,
       onServerSuccess,
+      getStaleWhileRevalidate,
       ...options
     }: RequestOptions
   ): Promise<AxiosResponse<T>> => {
@@ -204,10 +211,18 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
                 }
               );
             if (cachedData) {
-              resolve({
-                data: cachedData,
-              });
-              return;
+              const { data, isStale } = cachedData;
+
+              if (isStale) {
+                if (getStaleWhileRevalidate) {
+                  getStaleWhileRevalidate(data);
+                }
+              } else {
+                resolve({
+                  data,
+                });
+                return;
+              }
             }
           }
 
@@ -343,11 +358,18 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
               }
               if (cacheId && APIAdapterConfiguration.cache) {
                 await APIAdapterConfiguration.cache
-                  .cacheData(cacheId, requestId, response.data, {
-                    url,
-                    headers,
-                    ...options,
-                  })
+                  .cacheData(
+                    cacheId,
+                    requestId,
+                    {
+                      data: response.data,
+                    },
+                    {
+                      url,
+                      headers,
+                      ...options,
+                    }
+                  )
                   .catch((err) => {
                     err; // Caching failed
                   });
