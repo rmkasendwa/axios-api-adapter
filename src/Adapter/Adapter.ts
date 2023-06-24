@@ -215,7 +215,11 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
 
               if (isStale) {
                 if (getStaleWhileRevalidate) {
-                  getStaleWhileRevalidate(data);
+                  try {
+                    getStaleWhileRevalidate(data);
+                  } catch (err) {
+                    console.error(err);
+                  }
                 }
               } else {
                 resolve({
