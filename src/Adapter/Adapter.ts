@@ -281,6 +281,9 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
                       retryCount < MAX_REQUEST_RETRY_COUNT)
                   );
                 })();
+                if (RequestController.processResponseError) {
+                  err = await RequestController.processResponseError(err);
+                }
                 if (APIAdapterConfiguration.preProcessResponseErrorMessages) {
                   pendingRequestCancelTokenSources.splice(
                     pendingRequestCancelTokenSources.indexOf(cancelTokenSource),
@@ -291,9 +294,6 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
                       (cancelTokenSource) => cancelTokenSource.cancel()
                     );
                   };
-                  if (RequestController.processResponseError) {
-                    err = await RequestController.processResponseError(err);
-                  }
                   const { response, message } = err as any;
                   const errorMessage = (() => {
                     if (response?.data) {
