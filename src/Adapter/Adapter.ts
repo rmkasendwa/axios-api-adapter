@@ -19,6 +19,9 @@ export const REDIRECTION_ERROR_MESSAGES = [
   'User session expired',
 ];
 
+/**
+ * The API request cache. This is used to cache the API responses.
+ */
 export interface APIRequestCache {
   /**
    * Finds the cached data. If not found, it will fetch the data from the API and cache it.
@@ -57,6 +60,9 @@ export interface APIRequestCache {
   ) => Promise<boolean>;
 }
 
+/**
+ * The API adapter configuration. This is used to configure the API adapter.
+ */
 export interface IAPIAdapterConfiguration {
   /**
    * Host URL for the API
@@ -83,24 +89,71 @@ export interface IAPIAdapterConfiguration {
   cache?: APIRequestCache;
 }
 
+/**
+ * The request controller. This is used to control the request before it is sent and after a
+ * response is received.
+ */
 export interface RequestController {
+  /**
+   * Function that processes the response before it is returned. This is useful for
+   * extracting response headers and appending them to the default request headers.
+   *
+   * @param responseHeaders The response headers.
+   * @param requestHeaders The request headers.
+   * @returns The new headers that should be appended to the default request headers.
+   */
   rotateHeaders?: (
     responseHeaders: Record<string, string>,
     requestHeaders: Record<string, string>
   ) => Record<string, string>;
+
+  /**
+   * Function that processes the response before it is returned.
+   */
   processResponse?: ResponseProcessor;
+
+  /**
+   * Function that processes the response error before it is returned.
+   *
+   * @param err The response error.
+   * @returns The new error.
+   */
   processResponseError?: (err: AxiosError<any>) => any;
+
+  /**
+   * Function that determines whether to retry the request or not.
+   *
+   * @param err The response error.
+   * @param numberOfTrials The number of times the request has been retried.
+   * @returns Whether to retry the request or not.
+   */
   shouldRetryRequest?: (
     err: AxiosError<any>,
     numberOfTrials: number
   ) => Promise<boolean>;
 }
 
+/**
+ * The options for the API adapter.
+ */
 export interface GetAPIAdapterOptions {
+  /**
+   * The id of the API adapter. This is used to identify the API adapter in the storage.
+   */
   id?: string;
+
+  /**
+   * The host URL for the API. If not provided, it will be extracted from the window object.
+   */
   hostUrl?: string;
 }
 
+/**
+ * Returns the API adapter.
+ *
+ * @param options The options for the API adapter.
+ * @returns The API adapter.
+ */
 export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
   const HOST_URL = (() => {
     if (hostUrl) {
@@ -112,18 +165,15 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
     return '';
   })();
 
-  const { defaultRequestHeadersStorageKey, tokenStorageKey } = (() => {
+  const { defaultRequestHeadersStorageKey } = (() => {
     let defaultRequestHeadersStorageKey = 'defaultRequestHeaders';
-    let tokenStorageKey = 'token';
 
     if (id) {
       defaultRequestHeadersStorageKey += id;
-      tokenStorageKey += id;
     }
 
     return {
       defaultRequestHeadersStorageKey,
-      tokenStorageKey,
     };
   })();
 
@@ -153,15 +203,37 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
     window.addEventListener('focus', setDefaultRequestHeaders);
   }
 
+  /**
+   * Adds the headers to the default request headers.
+   *
+   * @param headers The headers to append to the default request headers.
+   */
   const patchDefaultRequestHeaders = (headers: Record<string, string>) => {
     Object.assign(defaultRequestHeaders, headers);
     StorageManager.add(defaultRequestHeadersStorageKey, defaultRequestHeaders);
+  };
+
+  /**
+   * Clears the default request headers
+   */
+  const clearDefaultRequestHeaders = () => {
+    Object.keys(defaultRequestHeaders).forEach((key) => {
+      delete defaultRequestHeaders[key];
+    });
+    StorageManager.remove(defaultRequestHeadersStorageKey);
   };
 
   const RequestController: RequestController = {};
 
   const pendingRequestCancelTokenSources: CancelTokenSource[] = [];
 
+  /**
+   * Fetches the data from the API.
+   *
+   * @param path The path to the resource.
+   * @param param1 The request options.
+   * @returns The response.
+   */
   const fetchData = async <T = any>(
     path: string,
     {
@@ -388,6 +460,12 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
     });
   };
 
+  /**
+   * Returns the request options with the default options patched.
+   *
+   * @param param0 The request options.
+   * @returns The request options with the default options patched.
+   */
   const getRequestDefaultOptions = ({ ...options }: RequestOptions = {}) => {
     options.headers || (options.headers = {});
 
@@ -403,10 +481,23 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
     return options;
   };
 
+  /**
+   * Fetches the data from the API using the GET method.
+   *
+   * @param path The path to the resource.
+   * @param options The request options.
+   * @returns The response.
+   */
   const get = <T = any>(path: string, options: RequestOptions = {}) => {
     return fetchData<T>(path, options);
   };
 
+  /**
+   * Fetches the data from the API using the POST method.
+   * @param path The path to the resource.
+   * @param param1 The request options.
+   * @returns The response.
+   */
   const post = async <T = any>(
     path: string,
     { ...options }: RequestOptions = {}
@@ -415,6 +506,13 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
     return fetchData<T>(path, getRequestDefaultOptions(options));
   };
 
+  /**
+   * Fetches the data from the API using the PUT method.
+   *
+   * @param path The path to the resource.
+   * @param param1 The request options.
+   * @returns The response.
+   */
   const put = async <T = any>(
     path: string,
     { ...options }: RequestOptions = {}
@@ -423,6 +521,13 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
     return fetchData<T>(path, getRequestDefaultOptions(options));
   };
 
+  /**
+   * Fetches the data from the API using the PATCH method.
+   *
+   * @param path The path to the resource.
+   * @param param1 The request options.
+   * @returns The response.
+   */
   const patch = async <T = any>(
     path: string,
     { ...options }: RequestOptions = {}
@@ -431,13 +536,20 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
     return fetchData<T>(path, getRequestDefaultOptions(options));
   };
 
+  /**
+   * Fetches the data from the API using the DELETE method.
+   *
+   * @param path The path to the resource.
+   * @param options The request options.
+   * @returns The response.
+   */
   const _delete = <T = any>(path: string, options: RequestOptions = {}) => {
     options.method = 'DELETE';
     return fetchData<T>(path, options);
   };
 
   const logout = async () => {
-    StorageManager.remove(tokenStorageKey);
+    clearDefaultRequestHeaders();
   };
 
   return {
@@ -451,6 +563,7 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
     APIAdapterConfiguration,
     defaultRequestHeaders,
     patchDefaultRequestHeaders,
+    clearDefaultRequestHeaders,
   };
 };
 

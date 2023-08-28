@@ -1,10 +1,16 @@
 import { AxiosRequestConfig, AxiosResponse } from 'axios';
 import hashIt from 'hash-it';
 
+/**
+ * The request controller that can be used to cancel the request.
+ */
 export interface RequestController {
   cancelRequest: () => void;
 }
 
+/**
+ * The function that will be called to process the response before it is returned to the caller.
+ */
 export type ResponseProcessor = <T = any>(
   response: AxiosResponse<T>
 ) => AxiosResponse<any>;
@@ -50,14 +56,36 @@ type Resolve = (payload?: any) => void;
 
 type Reject = (err?: any) => void;
 
+/**
+ * The options of a queued request.
+ */
 interface QueuedRequestOptions extends RequestOptions {
+  /**
+   * The url of the request.
+   */
   url: string;
+
+  /**
+   * The function that will be called to resolve the request.
+   */
   resolve: Resolve;
+
+  /**
+   * The function that will be called to reject the request.
+   */
   reject: Reject;
 }
 
 const requestQueue: Record<string, QueuedRequestOptions[]> = {};
 
+/**
+ * Queues a request to be made. Requests with exactly the same options will be queued together.
+ * The request will be made when the first request with the same options is made, the resolve and
+ * reject functions will be called for all the requests with the same options.
+ *
+ * @param requestOptions The options of the request.
+ * @param callback The function that will be called to resolve or reject the request.
+ */
 export const queueRequest = (
   requestOptions: QueuedRequestOptions,
   callback: (resolve: Resolve, reject: Reject) => void
@@ -85,10 +113,21 @@ export const queueRequest = (
   }
 };
 
+/**
+ * Dequeues a request.
+ *
+ * @param url The url of the request.
+ */
 const dequeueRequest = (url: string) => {
   delete requestQueue[url];
 };
 
+/**
+ * Resolves a request.
+ *
+ * @param requestKey The key of the request.
+ * @param payload The payload to resolve the request with.
+ */
 const resolveRequest = (requestKey: string, payload: any) => {
   if (requestQueue[requestKey]?.length > 0) {
     requestQueue[requestKey].forEach(({ resolve }) => {
@@ -98,6 +137,12 @@ const resolveRequest = (requestKey: string, payload: any) => {
   }
 };
 
+/**
+ * Rejects a request.
+ *
+ * @param requestKey The key of the request.
+ * @param err The error to reject the request with.
+ */
 const rejectRequest = (requestKey: string, err: any) => {
   if (requestQueue[requestKey]?.length > 0) {
     requestQueue[requestKey].forEach(({ reject }) => {

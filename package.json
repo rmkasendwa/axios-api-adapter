@@ -1,6 +1,6 @@
 {
   "name": "@infinite-debugger/axios-api-adapter",
-  "version": "0.1.0-alpha.16",
+  "version": "0.1.0-alpha.17",
   "description": "API adapter for javascript client applications",
   "keywords": [
     "node",
