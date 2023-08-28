@@ -105,7 +105,7 @@ export interface RequestController {
   rotateHeaders?: (
     responseHeaders: Record<string, string>,
     requestHeaders: Record<string, string>
-  ) => Record<string, string>;
+  ) => Record<string, string> | undefined;
 
   /**
    * Function that processes the response before it is returned.
@@ -208,7 +208,7 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
    *
    * @param headers The headers to append to the default request headers.
    */
-  const patchDefaultRequestHeaders = (headers: Record<string, string>) => {
+  const patchDefaultRequestHeaders = (headers?: Record<string, string>) => {
     Object.assign(defaultRequestHeaders, headers);
     StorageManager.add(defaultRequestHeadersStorageKey, defaultRequestHeaders);
   };
