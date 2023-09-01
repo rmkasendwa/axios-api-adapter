@@ -2,7 +2,6 @@ import StorageManager from '@infinite-debugger/rmk-utils/StorageManager';
 import axios, { AxiosError, AxiosResponse, CancelTokenSource } from 'axios';
 import hashIt from 'hash-it';
 
-import { CANCELLED_API_REQUEST_MESSAGE } from '../constants';
 import {
   RequestOptions,
   ResponseProcessor,
@@ -11,12 +10,14 @@ import {
 
 export { RequestOptions, ResponseProcessor };
 
-export const REDIRECTION_ERROR_MESSAGES = [
-  'User session timed out',
+export const CANCELLED_API_REQUEST_MESSAGE = 'Request Cancelled';
+
+export const EXPIRED_SESSION_ERROR_MESSAGES = [
   'Session timed out',
-  'Invalid token',
   'Session expired',
+  'User session timed out',
   'User session expired',
+  'Invalid token',
 ];
 
 /**
@@ -89,11 +90,31 @@ export interface IAPIAdapterConfiguration {
   cache?: APIRequestCache;
 }
 
+export type RequestErrorEvent = {
+  type: 'error';
+  error: AxiosError;
+};
+
+export type RequestErrorEventListenerFunction = (
+  event: RequestErrorEvent
+) => void;
+
+export type AddRequestErrorEventListenerFunction<RequestController> = (
+  event: 'error',
+  listener: RequestErrorEventListenerFunction
+) => ThisType<RequestController>;
+
+export type AddRequestEventListener<RequestController> =
+  AddRequestErrorEventListenerFunction<RequestController>;
+
 /**
  * The request controller. This is used to control the request before it is sent and after a
  * response is received.
  */
 export interface RequestController {
+  readonly addEventListener: AddRequestEventListener<this>;
+  readonly removeEventListener: AddRequestEventListener<this>;
+
   /**
    * Function that processes the response before it is returned. This is useful for
    * extracting response headers and appending them to the default request headers.
@@ -165,6 +186,12 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
     return '';
   })();
 
+  const eventsQueue: {
+    error: RequestErrorEventListenerFunction[];
+  } = {
+    error: [],
+  };
+
   const { defaultRequestHeadersStorageKey } = (() => {
     let defaultRequestHeadersStorageKey = 'defaultRequestHeaders';
 
@@ -223,7 +250,19 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
     StorageManager.remove(defaultRequestHeadersStorageKey);
   };
 
-  const RequestController: RequestController = {};
+  const RequestController: RequestController = {
+    addEventListener: (event, listener) => {
+      eventsQueue[event].push(listener);
+      return RequestController;
+    },
+    removeEventListener: (event, listener) => {
+      const index = eventsQueue[event].indexOf(listener);
+      if (index > -1) {
+        eventsQueue[event].splice(index, 1);
+      }
+      return RequestController;
+    },
+  };
 
   const pendingRequestCancelTokenSources: CancelTokenSource[] = [];
 
@@ -234,7 +273,7 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
    * @param param1 The request options.
    * @returns The response.
    */
-  const fetchData = async <T = any>(
+  const fetchData = async <Data = any>(
     path: string,
     {
       headers = {},
@@ -245,7 +284,7 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
       getStaleWhileRevalidate,
       ...options
     }: RequestOptions
-  ): Promise<AxiosResponse<T>> => {
+  ): Promise<AxiosResponse<Data>> => {
     const url = APIAdapterConfiguration.getFullResourceURL(path);
 
     return new Promise((resolve, reject) => {
@@ -256,6 +295,7 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
         })
       );
 
+      //#region Queue the request
       queueRequest(
         {
           ...options,
@@ -264,7 +304,7 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
           reject,
         },
         async (resolve, reject) => {
-          // Check if the request is already cached
+          //#region Check if the request is already cached
           if (
             cacheId &&
             APIAdapterConfiguration.cache &&
@@ -301,7 +341,14 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
               }
             }
           }
+          //#endregion
 
+          /**
+           * Fetches the data from the API.
+           *
+           * @param retryCount The number of times the request has been retried.
+           * @returns The response.
+           */
           const fetchData = async (retryCount = 0): Promise<any> => {
             const cancelTokenSource = axios.CancelToken.source();
             options.getRequestController &&
@@ -311,6 +358,8 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
                 },
               });
             pendingRequestCancelTokenSources.push(cancelTokenSource);
+
+            //#region Make axios request to the API
             const response = await axios(url, {
               ...options,
               headers: {
@@ -356,6 +405,16 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
                 if (RequestController.processResponseError) {
                   err = await RequestController.processResponseError(err);
                 }
+
+                //#region Emit the error event
+                eventsQueue.error.forEach((listener) => {
+                  listener({
+                    type: 'error',
+                    error: err,
+                  });
+                });
+                //#endregion
+
                 if (APIAdapterConfiguration.preProcessResponseErrorMessages) {
                   pendingRequestCancelTokenSources.splice(
                     pendingRequestCancelTokenSources.indexOf(cancelTokenSource),
@@ -369,7 +428,7 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
                   const { response, message } = err as any;
                   const errorMessage = (() => {
                     if (response?.data) {
-                      // Extracting server side error message
+                      //#region Extracting server side error message
                       const message = (() => {
                         if (typeof response.data.message === 'string') {
                           return response.data.message;
@@ -393,10 +452,15 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
                         }
                         return 'Something went wrong';
                       })();
-                      if (REDIRECTION_ERROR_MESSAGES.includes(message)) {
+                      //#endregion
+
+                      //#region Cancel all pending requests if the error message is a session timeout error
+                      if (EXPIRED_SESSION_ERROR_MESSAGES.includes(message)) {
                         cancelPendingRequests();
                         return message;
                       }
+                      //#endregion
+
                       return `Error: '${label}' failed with message "${message}"`;
                     }
                     if (
@@ -419,6 +483,8 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
 
                 return reject(err);
               });
+            //#endregion
+
             if (response) {
               pendingRequestCancelTokenSources.splice(
                 pendingRequestCancelTokenSources.indexOf(cancelTokenSource),
@@ -432,6 +498,8 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
                   )
                 );
               }
+
+              //#region Cache the response data
               if (cacheId && APIAdapterConfiguration.cache) {
                 await APIAdapterConfiguration.cache
                   .cacheData(
@@ -450,6 +518,8 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
                     err; // Caching failed
                   });
               }
+              //#endregion
+
               onServerSuccess && onServerSuccess(response);
               return resolve(response);
             }
@@ -457,13 +527,14 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
           fetchData();
         }
       );
+      //#endregion
     });
   };
 
   /**
    * Returns the request options with the default options patched.
    *
-   * @param param0 The request options.
+   * @param options The request options.
    * @returns The request options with the default options patched.
    */
   const getRequestDefaultOptions = ({ ...options }: RequestOptions = {}) => {
@@ -488,52 +559,52 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
    * @param options The request options.
    * @returns The response.
    */
-  const get = <T = any>(path: string, options: RequestOptions = {}) => {
-    return fetchData<T>(path, options);
+  const get = <Data = any>(path: string, options: RequestOptions = {}) => {
+    return fetchData<Data>(path, options);
   };
 
   /**
    * Fetches the data from the API using the POST method.
    * @param path The path to the resource.
-   * @param param1 The request options.
+   * @param options The request options.
    * @returns The response.
    */
-  const post = async <T = any>(
+  const post = async <Data = any>(
     path: string,
     { ...options }: RequestOptions = {}
   ) => {
     options.method = 'POST';
-    return fetchData<T>(path, getRequestDefaultOptions(options));
+    return fetchData<Data>(path, getRequestDefaultOptions(options));
   };
 
   /**
    * Fetches the data from the API using the PUT method.
    *
    * @param path The path to the resource.
-   * @param param1 The request options.
+   * @param options The request options.
    * @returns The response.
    */
-  const put = async <T = any>(
+  const put = async <Data = any>(
     path: string,
     { ...options }: RequestOptions = {}
   ) => {
     options.method = 'PUT';
-    return fetchData<T>(path, getRequestDefaultOptions(options));
+    return fetchData<Data>(path, getRequestDefaultOptions(options));
   };
 
   /**
    * Fetches the data from the API using the PATCH method.
    *
    * @param path The path to the resource.
-   * @param param1 The request options.
+   * @param options The request options.
    * @returns The response.
    */
-  const patch = async <T = any>(
+  const patch = async <Data = any>(
     path: string,
     { ...options }: RequestOptions = {}
   ) => {
     options.method = 'PATCH';
-    return fetchData<T>(path, getRequestDefaultOptions(options));
+    return fetchData<Data>(path, getRequestDefaultOptions(options));
   };
 
   /**
@@ -543,9 +614,9 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
    * @param options The request options.
    * @returns The response.
    */
-  const _delete = <T = any>(path: string, options: RequestOptions = {}) => {
+  const _delete = <Data = any>(path: string, options: RequestOptions = {}) => {
     options.method = 'DELETE';
-    return fetchData<T>(path, options);
+    return fetchData<Data>(path, options);
   };
 
   const logout = async () => {

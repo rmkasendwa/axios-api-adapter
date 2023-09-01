@@ -5,6 +5,9 @@ import hashIt from 'hash-it';
  * The request controller that can be used to cancel the request.
  */
 export interface RequestController {
+  /**
+   * Cancels the request.
+   */
   cancelRequest: () => void;
 }
 
