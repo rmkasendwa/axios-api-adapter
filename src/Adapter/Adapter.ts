@@ -1,3 +1,4 @@
+import { addSearchParams } from '@infinite-debugger/rmk-utils/paths';
 import StorageManager from '@infinite-debugger/rmk-utils/StorageManager';
 import axios, { AxiosError, AxiosResponse, CancelTokenSource } from 'axios';
 import hashIt from 'hash-it';
@@ -88,6 +89,11 @@ export interface IAPIAdapterConfiguration {
    * The cache to use for caching the API responses
    */
   cache?: APIRequestCache;
+
+  /**
+   * The default request options
+   */
+  defaultRequestOptions?: RequestOptions;
 }
 
 export type RequestErrorEvent = {
@@ -275,17 +281,27 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
    */
   const fetchData = async <Data = any>(
     path: string,
-    {
+    inputOptions: RequestOptions
+  ): Promise<AxiosResponse<Data>> => {
+    const {
       headers = {},
       label = 'operation',
       processResponse,
       cacheId,
       onServerSuccess,
       getStaleWhileRevalidate,
+      queryParams,
       ...options
-    }: RequestOptions
-  ): Promise<AxiosResponse<Data>> => {
-    const url = APIAdapterConfiguration.getFullResourceURL(path);
+    } = { ...APIAdapterConfiguration.defaultRequestOptions, ...inputOptions };
+    const url = (() => {
+      const baseUrl = APIAdapterConfiguration.getFullResourceURL(path);
+      if (queryParams) {
+        return addSearchParams(baseUrl, queryParams, {
+          arrayParamStyle: 'append',
+        });
+      }
+      return baseUrl;
+    })();
 
     return new Promise((resolve, reject) => {
       const requestId = String(

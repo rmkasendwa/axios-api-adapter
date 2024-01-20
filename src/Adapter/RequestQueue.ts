@@ -53,6 +53,11 @@ export interface RequestOptions<T = any> extends AxiosRequestConfig<T> {
    * @param staleData The stale data that was returned from the cache.
    */
   getStaleWhileRevalidate?: (staleData: T) => void;
+
+  /**
+   * The query params to add to the request url.
+   */
+  queryParams?: Record<string, any>;
 }
 
 type Resolve = (payload?: any) => void;
