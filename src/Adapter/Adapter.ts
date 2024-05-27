@@ -228,6 +228,8 @@ export const getAPIAdapter = ({ id, hostUrl }: GetAPIAdapterOptions = {}) => {
     const cachedDefaultRequestHeaders: Record<string, string> | null =
       StorageManager.get(defaultRequestHeadersStorageKey);
     cachedDefaultRequestHeaders &&
+      typeof cachedDefaultRequestHeaders === 'object' &&
+      Object.keys(cachedDefaultRequestHeaders).length <= 5 &&
       Object.assign(defaultRequestHeaders, cachedDefaultRequestHeaders);
   };
   setDefaultRequestHeaders();
